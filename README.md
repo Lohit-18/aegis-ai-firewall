@@ -1,40 +1,74 @@
-\# Aegis: AI Prompt Injection Firewall 🛡️
+# Aegis: Real-Time LLM Prompt Injection Firewall 🛡️
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Framework: FastAPI](https://img.shields.io/badge/Framework-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Security: OWASP LLM Top 10](https://img.shields.io/badge/Security-OWASP%20LLM01-red.svg)](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
+
+> **A reverse-proxy security gateway that intercepts, sanitizes, and scores prompt injection attacks across untrusted data channels in real time.**
+
+---
+
+## 💡 Architectural Thesis
+
+Language models treat all incoming input as a single, flat stream of tokens. Architecturally, an LLM **cannot distinguish** between authoritative developer instructions and malicious prompt injections contained within retrieved external data (e.g., PDFs, web scrapes, tool outputs).
 
 
+**Aegis solves this at the network layer.** Sitting as a proxy between the client and the model, Aegis preserves provenance by inspecting incoming JSON payloads *before* they are collapsed into a flat token stream. Text is scored strictly according to its channel origin, applying aggressive mitigation to untrusted document channels while maintaining low friction for legitimate user prompts.
 
-A real-time, channel-aware reverse proxy that intercepts, analyzes, and sanitizes traffic between user applications and Large Language Models (LLMs) to prevent prompt injection and data exfiltration.
+---
 
+## ⚡ Key Features
 
+* **Channel-Aware Provenance Inspection:** Maps API request roles (`system`, `user`, `tool`) to distinct trust channels (`SYSTEM`, `USER`, `DOCUMENT`) with independent threat baselines.
+* **Noisy-OR Threat Scoring:** Utilizes a probabilistic combining function to aggregate risk weights without score saturation or hard clipping.
+* **Structural & Unicode Normalization:** Unmasks obfuscation attacks by stripping zero-width codepoints (e.g., `U+200B`), decoding bidi overrides, and applying `NFKC` normalization before pattern execution.
+* **Deterministic Fallback Routing:** Returns standardized HTTP `403 Forbidden` JSON responses upon threat threshold violation, protecting upstream LLM tokens.
 
-\## Why This Exists (The Core Thesis)
+---
 
-A language model receives one flat sequence of tokens. It has no mechanism for telling instructions written by the developer apart from text that arrived inside an untrusted document. 
+## 🧮 Threat Scoring Model
 
+Rather than using a naive additive sum—which causes weak rules to falsely outrank strong signals—Aegis computes the overall threat probability using a **Noisy-OR** function:
 
+$$P(\text{Attack}) = 1 - \prod_{i=1}^{n} (1 - w_i)$$
 
-A proxy sitting in front of the model \*does\* know the difference. Aegis treats user inputs (semi-trusted) and retrieved documents (untrusted) differently to stop prompt injection at the network layer before the model ever sees it.
+Where $w_i$ represents the weight of each matched rule $i$.
 
+### Properties of this Approach:
+1. **Bounded:** Ensures the score mathematically approaches but never exceeds `1.0`.
+2. **Monotonic:** Adding evidence strictly increases or maintains the threat score.
+3. **Dominance-Preserving:** A single high-confidence rule (e.g., $w_i = 0.90$) independently triggers a block, regardless of low-confidence signals.
 
+---
 
-\## Key Features
+## 🛡️ Threat Model & Rule Table
 
-\* \*\*Channel-Aware Provenance:\*\* Scores payloads differently based on their origin (`system`, `user`, or `document`).
+Aegis targets **OWASP LLM01: Direct & Indirect Prompt Injection**.
 
-\* \*\*Noisy-OR Threat Combiner:\*\* Combines rule weights mathematically `P(attack) = 1 − Π (1 − wᵢ)` rather than simple addition, preventing score saturation while allowing single high-severity rules to flag attacks.
+| Rule ID | Vector Target | Severity | Weight ($w$) | Target Channels |
+| :--- | :--- | :--- | :--- | :--- |
+| `RULE_01_OVERRIDE` | Instruction Override / System Jailbreak | `HIGH` | `0.85` | `USER`, `DOCUMENT` |
+| `RULE_02_EXFILTRATION` | Credential & System Prompt Leakage | `HIGH` | `0.75` | `USER`, `DOCUMENT` |
+| `RULE_03_OBFUSCATION` | Invisible Codepoint / Structural Evasion | `MEDIUM` | `0.80` | `USER`, `DOCUMENT` |
 
-\* \*\*Structural Obfuscation Detection:\*\* Detects and normalizes hidden Unicode characters (like zero-width joiners) commonly used to bypass regex filters.
+---
 
+## 🚀 Quickstart & Verification
 
+### Prerequisites
+* Python 3.11+
+* Git
 
-\## How It Works
+### 1. Installation
 
-1\. Intercepts the raw JSON payload headed to the LLM.
+```bash
+git clone [https://github.com/Lohit-18/aegis-ai-firewall.git](https://github.com/Lohit-18/aegis-ai-firewall.git)
+cd aegis-ai-firewall
 
-2\. Maps each message to a strict trust channel.
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .\.venv\Scripts\activate
 
-3\. Cleans invisible characters and logs obfuscation attempts.
-
-4\. Scans the normalized text against a weighted rule table.
-
-5\. Emits a `BLOCK` or `ALLOW` verdict based on a dynamically calculated threat score.
-
+# Install dependencies
+pip install fastapi "uvicorn[standard]" httpx pydantic
