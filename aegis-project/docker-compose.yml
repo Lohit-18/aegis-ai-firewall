@@ -1,0 +1,14 @@
+services:
+  aegis:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      AEGIS_UPSTREAM_BASE_URL: "${AEGIS_UPSTREAM_BASE_URL:-http://host.docker.internal:11434/v1}"
+      AEGIS_UPSTREAM_API_KEY: "${AEGIS_UPSTREAM_API_KEY:-}"
+      AEGIS_FAILURE_MODE: "open"
+    volumes: ["aegis-data:/app/data"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    restart: unless-stopped
+
+volumes:
+  aegis-data:
